@@ -23,6 +23,6 @@ export default {
 
 <style>
   .router-link-active{
-    background-color: rgb(248, 14, 14);
+    background-color: red;
   }
 </style>
