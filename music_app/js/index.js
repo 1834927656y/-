@@ -9,9 +9,11 @@ $(function(){
     let musics = []
     //初始化当前播放的歌曲索引
     let currentIndex = 0
-
-    let m = musics[currentIndex]
-    
+    //初始化歌曲的当前播放位置和总时长(单位:秒)
+    let now = 0
+    let total = 0
+    //标记当前播放器播放状态：true-正在播放 false-暂停播放
+    let playing = false
 
     //选中指定类名的元素并绑定点击事件
     $('.btn-list').on('click',function(){
@@ -31,61 +33,199 @@ $(function(){
          $.each(musics,(i,e)=>{
             $('#music-list').append(`<li data-index="${i}">${e.name}</li>`)
          }) 
-         console.log(musics);
-         let m = musics[currentIndex]
-         console.log(m);
-         console.log(m.path);
-         $('.music-name').text(m.name)
-         player.prop('src',m.path)
     })
 
     //为歌曲列表项绑定点击事件，实现歌曲播放
     //事件委派（委托）
     $('#music-list').on('click','li',function(){
+        //当前索引更改前，移除上一首歌曲列表项的激活状态
+        $(`li:eq(${currentIndex})`).removeClass('active')
         //获取li元素上的data-index属性
         currentIndex = $(this).data('index')
-        console.log(currentIndex);
-        console.log(musics[currentIndex].name);
-        $('.music-name').text(musics[currentIndex].name)
-        $('.cover').css("animation-play-state","running");
-        $('#music-list li').css("color","#ccc");
-        $(this).css("color","red");
-        $('.btn-play-pause i')[0].classList.replace('fa-play','fa-pause')
-        // $('ylhred').classList.remove('ylhred')
         //获取需要播放的歌曲对象
-        let m = musics[currentIndex]
+        let m = musics[currentIndex] 
         //为播放器设置播放源
         player.prop('src',m.path)
-        //主动触发play函数
-        player.trigger('play');
+        //开始播放
+        startPlay(m)
     })    
-
-    $('.music-name').text()
-    $('.btn-play-pause').on('click',function(){
-                if($('.btn-play-pause i')[0].classList[1] === 'fa-play'){
-                    $('.cover').css("animation-play-state","running");
-                    $('.btn-play-pause i')[0].classList.replace('fa-play','fa-pause')
-                    player.trigger('play');
-                }
-                else{
-                    $('.cover').css("animation-play-state","paused");
-                    $('.btn-play-pause i')[0].classList.replace('fa-pause','fa-play')
-                    player.trigger('pause');
-                }
-            })
+    
     //封装一个公共函数,实现歌曲播放信息状态同步显示
     function startPlay(){
-        //1.实现唱片旋转       
+        //标记当前播放器处于播放状态
+        playing = true
+        //主动触发play函数
+        player.trigger('play')
+        //1.实现唱片旋转 
+        $('.cover').addClass('playing')
         //2.在头部显示歌曲名称
-        $('.music-name').text(musics[0].name)
+        $('.music-name').text(musics[currentIndex].name)    
         //3.播放按钮切换为暂停
+        $('.btn-play-pause > i').removeClass('fa-play').addClass('fa-pause')
         //4.列表中正在播放的歌曲高亮展示
+        $(`li:eq(${currentIndex})`).addClass('active')
+        //5.同步显示唱片封面图和背景毛玻璃图片
+        $('.cover-img,.body-bg').prop('src',musics[currentIndex].ablumImg)
     }
-
+ 
     //扩展（查看Audio-api）
     //1. 同步动态显示播放时长和当前进度
     //2. 进度条同步显示
+
+    //监听播放器的媒体第一帧加载事件
+    player.on('loadeddata',function(){
+        //获取当前播放器表示的播放源的总播放时长
+        total = this.duration
+        //00:00
+        $('.time-total').text(fmtTime(total)) 
+    })
+
+    //监听播放器的当前播放时间变化
+    player.on('timeupdate',function(){
+        //获取当前播放进度
+        now = this.currentTime
+        if(now === total){
+            nextSong()
+            musicSequenceSwitch()
+        }
+        //将进度格式化为目标时间格式填充到对应的元素中
+        $('.time-now').text(fmtTime(now))
+        //实时同步进度显示
+        $('.progress').css('width',`${now/total*100}%`) 
+    }) 
+
+    //mm:ss
+    function fmtTime(t){
+        //基于提供的时间构建日期对象
+        t = new Date(t * 1000)
+        //获取日期对象中的分钟值
+        let m = t.getMinutes()
+        //获取日期对象中的秒钟值
+        let s = t.getSeconds();
+        //将时间格式化为两位数
+        m = m < 10 ? '0' + m : m
+        s = s < 10 ? '0' + s : s
+        return `${m}:${s}`;
+    } 
+
+    //为进度条父容器设置点击事件
+    $('.progress-touch').on('click',function(e){
+        //获取当前点击位置和左侧偏移值
+        let offset = e.offsetX
         
+        //当前进入条容器总宽度
+        let width = $(this).width()
+        //计算获取当前播放器需要跳转到的位置
+        now = offset / width * total
+        //设置播放器的当前位置
+        player.prop('currentTime',now)
+    })
+
+    //播放和暂停实现
+    $('.btn-play-pause').on('click',function(){
+        if(playing){
+            //暂停
+            player.trigger('pause')
+            //唱片停止旋转
+            $('.cover').removeClass('playing')
+            //按钮图标切换为播放
+            $('.btn-play-pause > i').removeClass('fa-pause').addClass('fa-play')
+            //标记暂停
+            playing = false
+        }else{
+            //继续播放
+            startPlay()
+        }
+    })
+
+    // 任务
+    // 1. 点击按钮实现循环图标切换（0-列表，1-随机，2-单曲）
+    // 2. 根据循环状态实现上一曲和下一曲切歌
+    // 3. 歌曲播放完毕之后，自动切歌（参考循环方式）
+    $('.btn-loop').on('click',function(){
+        if($('.btn-loop > i')[0].classList.contains('fa-random')){
+            $('.btn-loop > i').removeClass('fa-random').addClass('fa-reorder')
+        }
+        else if($('.btn-loop > i')[0].classList.contains('fa-reorder')){
+            $('.btn-loop > i').removeClass('fa-reorder').addClass('fa-repeat')
+        }
+        else if($('.btn-loop > i')[0].classList.contains('fa-repeat')){
+            $('.btn-loop > i').removeClass('fa-repeat').addClass('fa-random')
+        }    
+    })
+//设置播放
+    function musicSequenceSwitch(){ 
+            let m = musics[currentIndex] 
+            //为播放器设置播放源
+            player.prop('src',m.path)
+            //开始播放
+            startPlay(m) 
+    }
+
+//随机播放
+    function randomMusicSwitching(){
+        $(`li:eq(${currentIndex})`).removeClass('active')
+        let random = Math.floor(Math.random()*musics.length)
+        console.log(musics.length);
+        currentIndex = random
+        console.log(random);
+        let m = musics[currentIndex] 
+        //为播放器设置播放源
+        player.prop('src',m.path)
+        //开始播放
+        startPlay(m)
+    }
+
+//下一曲
+    function nextSong(){
+        if(currentIndex<musics.length-1){
+            currentIndex++;
+        }
+        else{
+            currentIndex=0;
+        }
+    }
+
+//上一曲
+    function previousSong(){
+        if(currentIndex>0){
+            currentIndex--;
+        }
+        else{
+            currentIndex=musics.length-1;
+        }
+    }
+
+//点击切换
+    $('.btn-next').on('click',function(){
+        $(`li:eq(${currentIndex})`).removeClass('active')
+        if($('.btn-loop > i')[0].classList.contains('fa-random')){
+            randomMusicSwitching()
+        }
+        else if($('.btn-loop > i')[0].classList.contains('fa-reorder')){
+            nextSong()
+           musicSequenceSwitch()
+        }
+        else if($('.btn-loop > i')[0].classList.contains('fa-repeat')){
+            nextSong()
+           musicSequenceSwitch()
+        }
+    })
+
+$('.btn-prev').on('click',function(){
+    $(`li:eq(${currentIndex})`).removeClass('active')
+    if($('.btn-loop > i')[0].classList.contains('fa-random')){
+        randomMusicSwitching()
+    }
+    else if($('.btn-loop > i')[0].classList.contains('fa-reorder')){
+        previousSong()
+       musicSequenceSwitch()
+    }
+    else if($('.btn-loop > i')[0].classList.contains('fa-repeat')){
+        previousSong()
+       musicSequenceSwitch()
+    }
+})
 })
 
     
